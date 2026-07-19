@@ -1,0 +1,196 @@
+---
+import Layout from '../layouts/Layout.astro';
+
+const installCommand = "curl --proto '=https' --tlsv1.2 -fsSL 'https://github.com/mindify-ai/cura-cli/blob/main/install.sh?raw=1' | sh";
+const quickStart = ['cura install cuda-12', 'cura use cuda-12', 'cura run -- nvcc --version'].join('\n');
+const shellSetup = [
+  '# zsh',
+  'eval "$(cura shell init zsh)"',
+  '',
+  '# bash',
+  'eval "$(cura shell init bash)"',
+  '',
+  '# fish',
+  'cura shell init fish | source',
+].join('\n');
+
+const commands = [
+  ['cura install cuda-12', 'Install the newest CUDA 12 release after reviewing its plan.'],
+  ['cura install metal', 'Inspect and configure Apple Metal development support.'],
+  ['cura list --available', 'Browse the CUDA releases available for this machine.'],
+  ['cura use cuda-12', 'Pin an environment in the current project.'],
+  ['cura run --cuda cuda-12 -- nvcc --version', 'Run one command inside a selected toolchain.'],
+  ['cura doctor', 'Diagnose the platform, driver, selection, and shell hook.'],
+];
+---
+
+<Layout title="CURA Docs — GPU environments, under control" description="Install, switch, and run reproducible CUDA and Metal development environments with CURA.">
+  <header class="topbar">
+    <div class="shell topbar-inner">
+      <a class="brand" href="#top" aria-label="CURA documentation home">
+        <span class="brand-mark" aria-hidden="true">C:</span>
+        <span>CURA <span class="brand-subtle">/ docs</span></span>
+      </a>
+      <nav class="topnav" aria-label="Primary navigation">
+        <a href="#install">Install</a>
+        <a href="#commands">Commands</a>
+        <a href="#safety">Safety</a>
+        <a class="github-link" href="https://github.com/mindify-ai/cura-cli">GitHub ↗</a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="top">
+    <section class="shell hero" aria-labelledby="hero-title">
+      <div class="hero-copy">
+        <span class="eyebrow">GPU environment control plane</span>
+        <h1 id="hero-title">Toolchains without the drift.</h1>
+        <p>
+          CURA installs, switches, and runs versioned CUDA environments on Linux and WSL,
+          with native Metal tooling on macOS. One interface from laptop to CI.
+        </p>
+        <div class="hero-actions">
+          <a class="button button-primary" href="#install">Install CURA</a>
+          <a class="button" href="#quick-start">Read the quick start</a>
+        </div>
+      </div>
+
+      <div class="terminal" aria-label="CURA terminal example">
+        <div class="terminal-bar">
+          <div class="terminal-dots" aria-hidden="true"><span></span><span></span><span></span></div>
+          <span>cura / session</span>
+        </div>
+        <div class="terminal-body">
+          <div><span class="prompt">$</span><span class="terminal-command">cura install cuda-12</span></div>
+          <div class="terminal-line">┌─ CURA · Installation plan ─────────────</div>
+          <div class="terminal-line">│ CUDA&nbsp;&nbsp;&nbsp;&nbsp; 12.9.2</div>
+          <div class="terminal-line">│ Scope&nbsp;&nbsp;&nbsp; User</div>
+          <div class="terminal-line">│ Profile&nbsp; Toolkit</div>
+          <div class="terminal-line">│ Payload&nbsp; 27 components · 3.4 GiB</div>
+          <div class="terminal-line">└────────────────────────────────────────</div>
+          <div class="terminal-success">✓ Environment activated</div>
+          <div><span class="prompt">$</span><span class="terminal-muted">nvcc --version</span><span class="terminal-cursor" aria-hidden="true"></span></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="shell signal-strip" aria-label="Platform support">
+      <div class="signal"><strong>Linux + WSL</strong><span>Versioned CUDA environments</span></div>
+      <div class="signal"><strong>macOS</strong><span>System-native Metal toolchain</span></div>
+      <div class="signal"><strong>Verified</strong><span>Checksummed, atomic activation</span></div>
+    </section>
+
+    <div class="shell docs-grid">
+      <aside class="sidebar">
+        <div class="sidebar-label">On this page</div>
+        <nav aria-label="Documentation sections">
+          <a href="#install">Installation</a>
+          <a href="#quick-start">Quick start</a>
+          <a href="#environments">Environments</a>
+          <a href="#commands">Commands</a>
+          <a href="#shell">Shell integration</a>
+          <a href="#safety">Safety model</a>
+        </nav>
+      </aside>
+
+      <article>
+        <section class="doc-section" id="install">
+          <span class="section-index">01 / INSTALLATION</span>
+          <h2>From zero to CURA in one line.</h2>
+          <p>
+            The installer detects Linux, WSL, or macOS, adds the current stable Rust toolchain
+            and Cargo when they are missing, then builds CURA from the source repository.
+          </p>
+          <div class="code-block" data-code-block><code>{installCommand}</code><button class="copy-button" type="button" data-copy aria-label="Copy installation command">cp</button></div>
+          <div class="callout">
+            CURA installs to <code>~/.cargo/bin</code> by default. Set <code>CURA_INSTALL_DIR</code>
+            before running the installer to choose another binary directory.
+          </div>
+        </section>
+
+        <section class="doc-section" id="quick-start">
+          <span class="section-index">02 / QUICK START</span>
+          <h2>Install. Select. Accelerate.</h2>
+          <p>Start the dashboard with <code>cura</code>, or use direct commands for scripts and CI.</p>
+          <div class="code-block"><code>{quickStart}</code></div>
+          <div class="card-grid">
+            <div class="doc-card">
+              <h3>Interactive by default</h3>
+              <p>Review exact versions, profiles, payload sizes, and driver compatibility before anything changes.</p>
+            </div>
+            <div class="doc-card">
+              <h3>Deterministic in CI</h3>
+              <p>Pin the full version and add <code>--yes --no-interactive</code> for repeatable automation.</p>
+            </div>
+          </div>
+        </section>
+
+        <section class="doc-section" id="environments">
+          <span class="section-index">03 / ENVIRONMENTS</span>
+          <h2>Local control, project precision.</h2>
+          <p>
+            CUDA environments live side by side. Select one globally, pin one with a project-local
+            <code>.cura-version</code>, or run a single process without changing the parent shell.
+            On macOS, CURA works with the Metal runtime already managed by the operating system.
+          </p>
+          <div class="card-grid">
+            <div class="doc-card"><h3>Runtime</h3><p>The leanest profile for applications that only need CUDA runtime libraries.</p></div>
+            <div class="doc-card"><h3>Toolkit</h3><p>Runtime, compiler, headers, and developer tools for everyday CUDA work.</p></div>
+            <div class="doc-card"><h3>Full</h3><p>The complete supported component set for advanced development workflows.</p></div>
+            <div class="doc-card"><h3>Metal</h3><p>GPU and Xcode toolchain detection for Apple silicon and Intel Macs.</p></div>
+          </div>
+        </section>
+
+        <section class="doc-section" id="commands">
+          <span class="section-index">04 / COMMANDS</span>
+          <h2>A small command surface.</h2>
+          <p>Everything in the dashboard is available as a composable command.</p>
+          <div class="command-list">
+            {commands.map(([command, description]) => (
+              <div class="command-row"><code>{command}</code><span>{description}</span></div>
+            ))}
+          </div>
+        </section>
+
+        <section class="doc-section" id="shell">
+          <span class="section-index">05 / SHELL</span>
+          <h2>Follow the project automatically.</h2>
+          <p>Enable the shell hook so CURA updates the active environment when you change directories.</p>
+          <div class="code-block"><code>{shellSetup}</code></div>
+        </section>
+
+        <section class="doc-section" id="safety">
+          <span class="section-index">06 / SAFETY MODEL</span>
+          <h2>Know what changes before it changes.</h2>
+          <p>
+            Downloads are verified against manifest SHA-256 hashes, extracted into staging, and
+            activated atomically. System and driver operations show a plan before invoking
+            <code>sudo</code>; CURA never installs a driver inside WSL.
+          </p>
+          <div class="callout">Partial downloads stay reusable, but partial environments never become selectable.</div>
+        </section>
+      </article>
+    </div>
+  </main>
+
+  <footer class="footer">
+    <div class="shell footer-inner">
+      <span>CURA · Open source GPU environment management</span>
+      <a href="https://github.com/mindify-ai/cura-cli">MIT licensed · View source ↗</a>
+    </div>
+  </footer>
+
+  <script>
+    document.querySelectorAll<HTMLButtonElement>('[data-copy]').forEach((button) => {
+      button.addEventListener('click', async () => {
+        const block = button.closest('[data-code-block]');
+        const code = block?.querySelector('code')?.textContent;
+        if (!code) return;
+
+        await navigator.clipboard.writeText(code);
+        button.textContent = 'ok';
+        window.setTimeout(() => { button.textContent = 'cp'; }, 1400);
+      });
+    });
+  </script>
+</Layout>

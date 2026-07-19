@@ -120,3 +120,11 @@ cargo fmt --check
 cargo clippy --all-targets --all-features -- -D warnings
 cargo test --all-targets
 ```
+
+The Astro documentation site lives in `docs/`:
+
+```sh
+cd docs
+npm install
+npm run dev
+```
