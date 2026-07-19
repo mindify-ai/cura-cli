@@ -293,21 +293,49 @@ fn extract_component(archive: &Path, target: &Path) -> Result<()> {
             bail!("unsafe archive path {}", original.display());
         }
         ensure_no_symlink_ancestors(target, &relative)?;
-        if let Some(link) = entry.link_name()?
-            && (link.is_absolute()
-                || link
-                    .components()
-                    .any(|c| matches!(c, PathComponent::ParentDir | PathComponent::Prefix(_))))
-        {
-            bail!(
-                "unsafe archive link {} -> {}",
-                original.display(),
-                link.display()
-            );
+        if let Some(link) = entry.link_name()? {
+            let is_symlink = entry.header().entry_type().is_symlink();
+            if !archive_link_is_safe(&relative, &link, is_symlink) {
+                bail!(
+                    "unsafe archive link {} -> {}",
+                    original.display(),
+                    link.display()
+                );
+            }
         }
         entry.unpack(target.join(relative))?;
     }
     Ok(())
+}
+
+fn archive_link_is_safe(entry: &Path, link: &Path, is_symlink: bool) -> bool {
+    if link.is_absolute() {
+        return false;
+    }
+
+    // A symlink target is resolved from the link's containing directory. Track
+    // its lexical depth below the extraction root so internal links such as
+    // `bin/nsys -> ../target-linux-x64/nsys` are accepted without allowing a
+    // target to climb outside that root. Tar hard-link targets are archive-root
+    // relative, so parent components remain forbidden for those.
+    let mut depth = if is_symlink {
+        entry
+            .parent()
+            .map_or(0, |parent| parent.components().count())
+    } else {
+        0
+    };
+    for component in link.components() {
+        match component {
+            PathComponent::Normal(_) => depth += 1,
+            PathComponent::CurDir => {}
+            PathComponent::ParentDir if depth > 0 => depth -= 1,
+            PathComponent::ParentDir | PathComponent::RootDir | PathComponent::Prefix(_) => {
+                return false;
+            }
+        }
+    }
+    true
 }
 
 fn ensure_no_symlink_ancestors(root: &Path, relative: &Path) -> Result<()> {
@@ -445,5 +473,30 @@ mod tests {
     fn formats_sizes() {
         assert_eq!(human_bytes(1024), "1.0 KiB");
         assert_eq!(human_bytes(0), "0 B");
+    }
+
+    #[test]
+    fn validates_archive_links_by_resolved_containment() {
+        let entry = Path::new("bin/nsys-ui");
+        assert!(archive_link_is_safe(
+            entry,
+            Path::new("../host-linux-x64/nsys-ui"),
+            true
+        ));
+        assert!(!archive_link_is_safe(
+            entry,
+            Path::new("../../etc/init.d/mst"),
+            true
+        ));
+        assert!(!archive_link_is_safe(
+            entry,
+            Path::new("/etc/init.d/mst"),
+            true
+        ));
+        assert!(!archive_link_is_safe(
+            entry,
+            Path::new("../other-file"),
+            false
+        ));
     }
 }
