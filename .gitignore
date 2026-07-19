@@ -1,4 +1,27 @@
-/target
-.DS_Store
-.cura-version
+# Rust build output
+/target/
+**/*.rs.bk
 
+# CURA project-local selection and development state
+.cura-version
+.cura/
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+
+# Test, coverage, and runtime artifacts
+/coverage/
+*.profraw
+*.profdata
+*.log
+*.tmp
+
+# Editors and operating systems
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
