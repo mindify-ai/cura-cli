@@ -199,13 +199,32 @@ fn included(name: &str, profile: Profile) -> bool {
     let forbidden = name.contains("compat")
         || name.contains("driver")
         || name.contains("cross")
-        || name.contains("orin");
+        || name.contains("orin")
+        || is_host_managed(name);
     if forbidden {
         return false;
     }
     RUNTIME.contains(&name)
         || matches!(profile, Profile::Toolkit | Profile::Full) && TOOLKIT.contains(&name)
         || matches!(profile, Profile::Full)
+}
+
+/// Components which install host services, firmware tools, or kernel modules are not
+/// relocatable into CURA's unprivileged, versioned environment prefix. NVIDIA lists
+/// these next to CUDA redistributables, but some contain absolute links into `/etc`
+/// or otherwise require a system package installation.
+fn is_host_managed(name: &str) -> bool {
+    matches!(
+        name,
+        "collectx_bringup"
+            | "fabricmanager"
+            | "imex"
+            | "libnvidia_nscq"
+            | "libnvsdm"
+            | "nvidia_fs"
+            | "nvlsm"
+    ) || name == "mft"
+        || name.starts_with("mft_")
 }
 
 #[cfg(test)]
@@ -218,5 +237,10 @@ mod tests {
         assert!(included("cuda_nvcc", Profile::Toolkit));
         assert!(included("cuda_gdb", Profile::Full));
         assert!(!included("cuda_compat", Profile::Full));
+        assert!(!included("fabricmanager", Profile::Full));
+        assert!(!included("mft", Profile::Full));
+        assert!(!included("mft_autocomplete", Profile::Full));
+        assert!(!included("nvidia_fs", Profile::Full));
+        assert!(included("nsight_compute", Profile::Full));
     }
 }
