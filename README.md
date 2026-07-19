@@ -38,17 +38,18 @@ regular subcommands for scripts and CI.
 
 ## Install CURA
 
-Build from source with a current stable Rust toolchain:
+Install CURA with one command. The installer detects Linux, WSL, or macOS, installs the
+current stable Rust toolchain and Cargo with rustup when needed, then builds and installs
+the CLI:
+
+```sh
+curl --proto '=https' --tlsv1.2 -fsSL 'https://github.com/mindify-ai/cura-cli/blob/main/install.sh?raw=1' | sh
+```
+
+To build from a local checkout with an existing current stable Rust toolchain:
 
 ```sh
 cargo install --path .
-```
-
-Prebuilt release binaries can be installed with:
-
-```sh
-curl --proto '=https' --tlsv1.2 -fsSL \
-  https://raw.githubusercontent.com/mindify-ai/cura-cli/main/install.sh | sh
 ```
 
 CUDA is supported on native Linux and WSL. Metal is supported on macOS and uses the runtime

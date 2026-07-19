@@ -1,32 +1,87 @@
 #!/bin/sh
 set -eu
 
-repository="mindify-ai/cura-cli"
-version="${CURA_VERSION:-latest}"
-destination="${CURA_INSTALL_DIR:-$HOME/.local/bin}"
+repository="https://github.com/mindify-ai/cura-cli.git"
+branch="${CURA_REF:-main}"
+cargo_home="${CARGO_HOME:-$HOME/.cargo}"
+destination="${CURA_INSTALL_DIR:-$cargo_home/bin}"
+original_path="$PATH"
 
-case "$(uname -s)-$(uname -m)" in
-  Linux-x86_64) target="x86_64-unknown-linux-gnu" ;;
-  Linux-aarch64|Linux-arm64) target="aarch64-unknown-linux-gnu" ;;
-  *) echo "CURA release binaries support Linux x86_64 and aarch64" >&2; exit 1 ;;
+say() {
+  printf '%s\n' "$*"
+}
+
+fail() {
+  printf 'error: %s\n' "$*" >&2
+  exit 1
+}
+
+command -v uname >/dev/null 2>&1 || fail "uname is required"
+command -v curl >/dev/null 2>&1 || fail "curl is required"
+command -v mktemp >/dev/null 2>&1 || fail "mktemp is required"
+
+os=$(uname -s)
+arch=$(uname -m)
+
+case "$os-$arch" in
+  Linux-x86_64|Linux-amd64|Linux-aarch64|Linux-arm64)
+    environment="Linux ($arch)"
+    if [ -r /proc/sys/kernel/osrelease ] && grep -qi microsoft /proc/sys/kernel/osrelease; then
+      environment="WSL ($arch)"
+    fi
+    ;;
+  Darwin-x86_64|Darwin-arm64|Darwin-aarch64)
+    environment="macOS ($arch)"
+    ;;
+  *)
+    fail "unsupported environment: $os ($arch); CURA supports Linux, WSL, and macOS on x86_64 or arm64"
+    ;;
 esac
 
-if [ "$version" = "latest" ]; then
-  version=$(curl --proto '=https' --tlsv1.2 -fsSL "https://api.github.com/repos/$repository/releases/latest" |
-    sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p' | head -1)
-fi
-[ -n "$version" ] || { echo "Could not resolve the latest CURA release" >&2; exit 1; }
+say "Detected $environment"
 
-archive="cura-${version#v}-$target.tar.gz"
-base="https://github.com/$repository/releases/download/$version"
+CARGO_HOME="$cargo_home"
+export CARGO_HOME
+PATH="$cargo_home/bin:$PATH"
+export PATH
+
+if [ -f "$cargo_home/env" ]; then
+  # rustup writes this POSIX-compatible environment file.
+  . "$cargo_home/env"
+fi
+
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT INT TERM
 
-curl --proto '=https' --tlsv1.2 -fsSL "$base/$archive" -o "$tmp/$archive"
-curl --proto '=https' --tlsv1.2 -fsSL "$base/SHA256SUMS" -o "$tmp/SHA256SUMS"
-(cd "$tmp" && grep " $archive\$" SHA256SUMS | shasum -a 256 -c -)
-tar -xzf "$tmp/$archive" -C "$tmp"
-mkdir -p "$destination"
-install -m 0755 "$tmp/cura" "$destination/cura"
-echo "Installed CURA to $destination/cura"
+if ! command -v rustc >/dev/null 2>&1 || ! command -v cargo >/dev/null 2>&1; then
+  say "Rust and Cargo were not found; installing the current stable toolchain with rustup..."
+  curl --proto '=https' --tlsv1.2 -fsSL https://sh.rustup.rs -o "$tmp/rustup-init.sh"
+  sh "$tmp/rustup-init.sh" -y --profile minimal --default-toolchain stable
 
+  [ -f "$cargo_home/env" ] || fail "rustup finished without creating $cargo_home/env"
+  . "$cargo_home/env"
+fi
+
+command -v rustc >/dev/null 2>&1 || fail "Rust installation did not provide rustc"
+command -v cargo >/dev/null 2>&1 || fail "Rust installation did not provide Cargo"
+command -v install >/dev/null 2>&1 || fail "the POSIX install utility is required"
+
+say "Using $(rustc --version)"
+say "Using $(cargo --version)"
+say "Installing CURA from $repository ($branch)..."
+
+cargo install \
+  --git "$repository" \
+  --branch "$branch" \
+  --locked \
+  --root "$tmp/cura-install" \
+  cura
+
+mkdir -p "$destination"
+install -m 0755 "$tmp/cura-install/bin/cura" "$destination/cura"
+
+say "Installed CURA to $destination/cura"
+case ":$original_path:" in
+  *":$destination:"*) ;;
+  *) say "Add $destination to PATH to run 'cura' from a new shell." ;;
+esac
