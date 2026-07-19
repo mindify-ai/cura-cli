@@ -85,6 +85,16 @@ impl Platform {
         Ok(())
     }
 
+    pub fn ensure_metal_supported(&self) -> Result<()> {
+        if self.os != "macos" {
+            bail!(
+                "Metal is supported on macOS; this host is {}. Use CUDA on Linux or WSL",
+                self.os
+            );
+        }
+        Ok(())
+    }
+
     pub fn manifest_key(&self) -> Result<&'static str> {
         match self.arch.as_str() {
             "x86_64" => Ok("linux-x86_64"),

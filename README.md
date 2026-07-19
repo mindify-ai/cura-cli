@@ -1,8 +1,13 @@
 # CURA
 
-**CURA** is an interactive CUDA environment manager for Linux and WSL, written in Rust.
-It installs versioned CUDA environments side by side, switches them per project, verifies
-every downloaded component, and can safely coordinate native package and driver changes.
+**CURA** is an interactive GPU development environment manager, written in Rust. It manages
+versioned CUDA environments on Linux and WSL and configures Apple's system-native Metal
+toolchain on macOS.
+
+CUDA environments are installed side by side, can be switched per project, and have every
+downloaded component verified. On macOS, CURA detects the Metal GPU and runtime supplied by
+the operating system, checks Xcode, and installs Apple's separately downloadable Metal
+compiler toolchain when needed.
 
 ```console
 $ cura install cuda-12
@@ -28,6 +33,8 @@ regular subcommands for scripts and CI.
 - Select CUDA globally or through a project-local `.cura-version` file.
 - Run commands in an environment without changing the parent shell.
 - Diagnose the platform, GPU driver, installed environments, selection, and shell hook.
+- Detect the Metal GPU and runtime version on macOS.
+- Inspect Xcode and install the Apple Metal compiler toolchain with a reviewed plan.
 
 ## Install CURA
 
@@ -44,8 +51,8 @@ curl --proto '=https' --tlsv1.2 -fsSL \
   https://raw.githubusercontent.com/mindify-ai/cura-cli/main/install.sh | sh
 ```
 
-CUDA itself is supported on native Linux and WSL. The CURA binary builds on macOS for
-development and reports an actionable unsupported-platform error for install operations.
+CUDA is supported on native Linux and WSL. Metal is supported on macOS and uses the runtime
+included with the operating system plus Apple's Xcode toolchain.
 
 ## Usage
 
@@ -66,6 +73,12 @@ cura use cuda-12 --global
 cura run --cuda cuda-12 -- nvcc --version
 cura doctor
 cura remove cuda-12
+
+# macOS: inspect and configure Metal development support.
+cura metal status
+cura install metal
+# Equivalent explicit form:
+cura metal install
 ```
 
 Enable automatic environment updates when changing directories:
@@ -86,10 +99,15 @@ Use `cura shell init zsh --write` (or `bash`/`fish`) to append the hook after re
 ## Data and security
 
 CURA follows XDG paths for configuration, data, cache, and state. Set `CURA_HOME` to keep
-all four beneath one directory. User installs are downloaded directly from NVIDIA's
+all four beneath one directory. CUDA user installs are downloaded directly from NVIDIA's
 redistributable catalog, checked against the manifest SHA-256, safely extracted into a
 staging directory, and atomically activated. Partial downloads remain reusable; partial
 environments never become selectable.
+
+Metal is system-managed and is not represented as a versioned CURA environment. CURA uses
+`system_profiler`, `xcode-select`, and `xcrun` for read-only detection. When approved,
+`cura metal install` runs `xcodebuild -downloadComponent MetalToolchain`; it does not modify
+the macOS GPU driver or install third-party packages.
 
 System and driver operations display a plan before invoking `sudo`. In non-interactive
 contexts, payload selection and destructive confirmation must be explicit.
@@ -101,4 +119,3 @@ cargo fmt --check
 cargo clippy --all-targets --all-features -- -D warnings
 cargo test --all-targets
 ```
-

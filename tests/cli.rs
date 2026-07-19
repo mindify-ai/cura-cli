@@ -9,9 +9,10 @@ fn help_exposes_core_lifecycle() {
         .assert()
         .success()
         .stdout(predicate::str::contains(
-            "interactive CUDA environment manager",
+            "interactive GPU environment manager",
         ))
         .stdout(predicate::str::contains("install"))
+        .stdout(predicate::str::contains("metal"))
         .stdout(predicate::str::contains("doctor"));
 }
 
@@ -24,7 +25,10 @@ fn empty_home_lists_cleanly() {
         .args(["--no-interactive", "list"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("No CUDA environments installed"));
+        .stdout(
+            predicate::str::contains("No CUDA environments installed")
+                .or(predicate::str::contains("Metal is managed by macOS")),
+        );
 }
 
 #[test]
@@ -60,4 +64,33 @@ fn install_rejects_unsupported_host_before_network() {
         .assert()
         .failure()
         .stderr(predicate::str::contains("supported on Linux and WSL"));
+}
+
+#[test]
+fn metal_status_has_stable_json_output() {
+    Command::cargo_bin("cura")
+        .unwrap()
+        .args(["--json", "metal", "status"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("\"status\": \"ok\""))
+        .stdout(predicate::str::contains("\"supported\""))
+        .stdout(predicate::str::contains("\"ready\""));
+}
+
+#[test]
+fn metal_alias_rejects_cuda_only_options() {
+    Command::cargo_bin("cura")
+        .unwrap()
+        .args([
+            "--no-interactive",
+            "install",
+            "metal",
+            "--profile",
+            "runtime",
+            "--yes",
+        ])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("apply only to CUDA installations"));
 }

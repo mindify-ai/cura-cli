@@ -24,13 +24,23 @@ pub enum DashboardAction {
     Quit,
 }
 
-pub fn dashboard(installed: usize, active: Option<&str>) -> Result<DashboardAction> {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DashboardKind {
+    Cuda,
+    Metal,
+}
+
+pub fn dashboard(
+    kind: DashboardKind,
+    installed: usize,
+    active: Option<&str>,
+) -> Result<DashboardAction> {
     enable_raw_mode()?;
     let mut stdout = io::stdout();
     execute!(stdout, EnterAlternateScreen)?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
-    let result = dashboard_loop(&mut terminal, installed, active);
+    let result = dashboard_loop(&mut terminal, kind, installed, active);
     disable_raw_mode()?;
     execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
     terminal.show_cursor()?;
@@ -39,16 +49,53 @@ pub fn dashboard(installed: usize, active: Option<&str>) -> Result<DashboardActi
 
 fn dashboard_loop(
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
+    kind: DashboardKind,
     installed: usize,
     active: Option<&str>,
 ) -> Result<DashboardAction> {
-    let actions = [
-        ("Install CUDA", "Browse releases and choose a profile"),
-        ("Environments", "View installed CUDA toolkits"),
-        ("Switch version", "Set project or global CUDA"),
-        ("Run doctor", "Check GPU, driver, and shell health"),
-        ("Quit", "Leave CURA"),
-    ];
+    let actions: Vec<(DashboardAction, &str, &str)> = match kind {
+        DashboardKind::Cuda => vec![
+            (
+                DashboardAction::Install,
+                "Install CUDA",
+                "Browse releases and choose a profile",
+            ),
+            (
+                DashboardAction::Environments,
+                "Environments",
+                "View installed CUDA toolkits",
+            ),
+            (
+                DashboardAction::Use,
+                "Switch version",
+                "Set project or global CUDA",
+            ),
+            (
+                DashboardAction::Doctor,
+                "Run doctor",
+                "Check GPU, driver, and shell health",
+            ),
+            (DashboardAction::Quit, "Quit", "Leave CURA"),
+        ],
+        DashboardKind::Metal => vec![
+            (
+                DashboardAction::Install,
+                "Set up Metal",
+                "Install Apple's Metal compiler toolchain",
+            ),
+            (
+                DashboardAction::Environments,
+                "Metal status",
+                "Inspect GPU, runtime, Xcode, and compiler",
+            ),
+            (
+                DashboardAction::Doctor,
+                "Run doctor",
+                "Check Metal development health",
+            ),
+            (DashboardAction::Quit, "Quit", "Leave CURA"),
+        ],
+    };
     let mut selected = 0usize;
     loop {
         terminal.draw(|frame| {
@@ -77,7 +124,7 @@ fn dashboard_loop(
                             .add_modifier(Modifier::BOLD),
                     ),
                     Span::styled(
-                        "  CUDA environment manager",
+                        "  GPU environment manager",
                         Style::default().fg(Color::Gray),
                     ),
                 ]),
@@ -93,24 +140,36 @@ fn dashboard_loop(
                     .border_style(Style::default().fg(Color::DarkGray)),
             );
             frame.render_widget(title, chunks[0]);
-            let status = Paragraph::new(Line::from(vec![
-                Span::styled(
-                    format!("  {installed} "),
-                    Style::default()
-                        .fg(Color::Black)
-                        .bg(Color::Cyan)
-                        .add_modifier(Modifier::BOLD),
-                ),
-                Span::raw(" environments     "),
-                Span::styled(
-                    "ACTIVE ",
-                    Style::default()
-                        .fg(Color::Green)
-                        .add_modifier(Modifier::BOLD),
-                ),
-                Span::raw(active.unwrap_or("none")),
-            ]))
-            .block(
+            let overview = match kind {
+                DashboardKind::Cuda => Line::from(vec![
+                    Span::styled(
+                        format!("  {installed} "),
+                        Style::default()
+                            .fg(Color::Black)
+                            .bg(Color::Cyan)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                    Span::raw(" environments     "),
+                    Span::styled(
+                        "ACTIVE ",
+                        Style::default()
+                            .fg(Color::Green)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                    Span::raw(active.unwrap_or("none")),
+                ]),
+                DashboardKind::Metal => Line::from(vec![
+                    Span::styled(
+                        "  METAL  ",
+                        Style::default()
+                            .fg(Color::Black)
+                            .bg(Color::Cyan)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                    Span::raw("  macOS system accelerator"),
+                ]),
+            };
+            let status = Paragraph::new(overview).block(
                 Block::default()
                     .title(" Overview ")
                     .borders(Borders::ALL)
@@ -120,7 +179,7 @@ fn dashboard_loop(
             let items: Vec<ListItem> = actions
                 .iter()
                 .enumerate()
-                .map(|(i, (name, description))| {
+                .map(|(i, (_, name, description))| {
                     let marker = if i == selected { "›" } else { " " };
                     ListItem::new(Line::from(vec![
                         Span::styled(
@@ -170,13 +229,7 @@ fn dashboard_loop(
                 }
                 KeyCode::Char('q') | KeyCode::Esc => return Ok(DashboardAction::Quit),
                 KeyCode::Enter => {
-                    return Ok(match selected {
-                        0 => DashboardAction::Install,
-                        1 => DashboardAction::Environments,
-                        2 => DashboardAction::Use,
-                        3 => DashboardAction::Doctor,
-                        _ => DashboardAction::Quit,
-                    });
+                    return Ok(actions[selected].0);
                 }
                 _ => {}
             }
