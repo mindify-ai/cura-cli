@@ -13,14 +13,14 @@ use semver::Version;
 use crate::{
     catalog::Catalog,
     cli::{
-        Cli, Command, DriverCommand, EnvArgs, ListArgs, RemoveArgs, RunArgs, ShellCommand,
-        ShellKind, UseArgs,
+        Cli, Command, DriverCommand, EnvArgs, ListArgs, MetalCommand, RemoveArgs, RunArgs,
+        ShellCommand, ShellKind, UseArgs,
     },
-    install,
+    install, metal,
     model::{EnvironmentManifest, InstallScope, JsonEnvelope, VersionSpec},
     paths::{CuraPaths, find_project_version},
     platform::{self, PackageManager, Platform},
-    tui::{self, DashboardAction},
+    tui::{self, DashboardAction, DashboardKind},
 };
 
 pub fn run(cli: Cli) -> Result<()> {
@@ -34,6 +34,16 @@ pub fn run(cli: Cli) -> Result<()> {
         None if interactive => run_dashboard(&paths),
         None => {
             print_help_hint();
+            Ok(())
+        }
+        Some(Command::Install(args)) if args.version.eq_ignore_ascii_case("metal") => {
+            if args.profile.is_some() || args.system || args.no_driver {
+                bail!("--profile, --system, and --no-driver apply only to CUDA installations");
+            }
+            let status = metal::install(args.yes, interactive, cli.json)?;
+            if cli.json {
+                print_json(&status)?;
+            }
             Ok(())
         }
         Some(Command::Install(args)) => {
@@ -53,6 +63,16 @@ pub fn run(cli: Cli) -> Result<()> {
             DriverCommand::Status => driver_status(cli.json),
             DriverCommand::Install { yes } => install::install_driver(&Platform::detect(), yes),
         },
+        Some(Command::Metal(args)) => match args.command {
+            MetalCommand::Status => metal_status(cli.json),
+            MetalCommand::Install { yes } => {
+                let status = metal::install(yes, interactive, cli.json)?;
+                if cli.json {
+                    print_json(&status)?;
+                }
+                Ok(())
+            }
+        },
         Some(Command::Shell(args)) => match args.command {
             ShellCommand::Init {
                 shell,
@@ -65,27 +85,38 @@ pub fn run(cli: Cli) -> Result<()> {
 
 fn run_dashboard(paths: &CuraPaths) -> Result<()> {
     loop {
+        let platform = Platform::detect();
+        let kind = if platform.os == "macos" {
+            DashboardKind::Metal
+        } else {
+            DashboardKind::Cuda
+        };
         let environments = installed(paths)?;
         let active = selected_raw(paths).ok().flatten();
-        match tui::dashboard(environments.len(), active.as_deref())? {
+        match tui::dashboard(kind, environments.len(), active.as_deref())? {
             DashboardAction::Install => {
-                let version: String = Input::with_theme(&ColorfulTheme::default())
-                    .with_prompt("CUDA version")
-                    .default("cuda-12".into())
-                    .interact_text()?;
-                install::install(
-                    crate::cli::InstallArgs {
-                        version,
-                        profile: None,
-                        system: false,
-                        yes: false,
-                        no_driver: false,
-                    },
-                    paths,
-                    true,
-                    false,
-                )?;
+                if kind == DashboardKind::Metal {
+                    metal::install(false, true, false)?;
+                } else {
+                    let version: String = Input::with_theme(&ColorfulTheme::default())
+                        .with_prompt("CUDA version")
+                        .default("cuda-12".into())
+                        .interact_text()?;
+                    install::install(
+                        crate::cli::InstallArgs {
+                            version,
+                            profile: None,
+                            system: false,
+                            yes: false,
+                            no_driver: false,
+                        },
+                        paths,
+                        true,
+                        false,
+                    )?;
+                }
             }
+            DashboardAction::Environments if kind == DashboardKind::Metal => metal_status(false)?,
             DashboardAction::Environments => list(ListArgs { available: false }, paths, false)?,
             DashboardAction::Use => {
                 let envs = installed(paths)?;
@@ -137,7 +168,11 @@ fn list(args: ListArgs, paths: &CuraPaths, json: bool) -> Result<()> {
         return print_json(&envs);
     }
     if envs.is_empty() {
-        println!("No CUDA environments installed. Try: cura install cuda-12");
+        if Platform::detect().os == "macos" {
+            println!("Metal is managed by macOS. Run: cura metal status");
+        } else {
+            println!("No CUDA environments installed. Try: cura install cuda-12");
+        }
         return Ok(());
     }
     let selected = selected_raw(paths)?.unwrap_or_default();
@@ -283,11 +318,14 @@ fn remove(args: RemoveArgs, paths: &CuraPaths, interactive: bool) -> Result<()> 
 fn doctor(paths: &CuraPaths, json: bool) -> Result<()> {
     let platform = Platform::detect();
     let driver = platform::driver_status(&platform);
+    let metal = (platform.os == "macos").then(metal::status);
     let envs = installed(paths)?;
     let selected = selected(paths).ok();
     let report = serde_json::json!({
         "platform": platform,
         "driver": driver,
+        "metal": metal,
+        "accelerator": if platform.os == "macos" { "metal" } else { "cuda" },
         "installed_environments": envs.len(),
         "selected": selected.as_ref().map(|e| format!("cuda-{}", e.release)),
         "shell_integration": env::var_os("CURA_SHELL_INTEGRATION").is_some(),
@@ -296,6 +334,37 @@ fn doctor(paths: &CuraPaths, json: bool) -> Result<()> {
         return print_json(&report);
     }
     println!("\x1b[1;36mCURA doctor\x1b[0m");
+    if let Some(metal) = metal {
+        check_line(
+            metal.supported,
+            "Platform",
+            &platform.display_name(),
+            "Metal requires macOS",
+        );
+        check_line(
+            metal.gpu_name.is_some(),
+            "Metal GPU",
+            metal.gpu_name.as_deref().unwrap_or("not detected"),
+            "this Mac does not report a Metal-capable GPU",
+        );
+        check_line(
+            metal.metal_version.is_some(),
+            "Metal runtime",
+            metal.metal_version.as_deref().unwrap_or("not reported"),
+            "update macOS",
+        );
+        check_line(
+            metal.compiler_version.is_some(),
+            "Metal compiler",
+            metal
+                .compiler_version
+                .as_deref()
+                .or(metal.compiler_error.as_deref())
+                .unwrap_or("not detected"),
+            "run cura metal install",
+        );
+        return Ok(());
+    }
     check_line(
         platform.os == "linux",
         "Platform",
@@ -349,6 +418,16 @@ fn driver_status(json: bool) -> Result<()> {
         if status.wsl_managed {
             println!("Driver ownership: Windows host (CURA will not modify it)");
         }
+        Ok(())
+    }
+}
+
+fn metal_status(json: bool) -> Result<()> {
+    let status = metal::status();
+    if json {
+        print_json(&status)
+    } else {
+        metal::print_status(&status);
         Ok(())
     }
 }
